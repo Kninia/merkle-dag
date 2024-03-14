@@ -1,4 +1,4 @@
-package merkle
+package merkledag
 
 import (
 	"crypto/sha256"
@@ -109,7 +109,6 @@ func TestDagStructure(t *testing.T) {
 		mp: make(map[string][]byte),
 	}
 	hasher := sha256.New()
-	// 一个小文件的测试
 	smallFile := &TestFile{
 		name: "tiny",
 		data: []byte("这是一个用于测试的小文件"),
@@ -117,12 +116,11 @@ func TestDagStructure(t *testing.T) {
 	rootHash := Add(store, smallFile, hasher)
 	fmt.Printf("%x\n", rootHash)
 
-	// 一个大文件的测试
 	store = &HashMap{
 		mp: make(map[string][]byte),
 	}
 	hasher.Reset()
-	bigFileContent, err := os.ReadFile("D:作业\\分布式\\merkle\\214_2021131130_谭明月_1.rar")
+	bigFileContent, err := os.ReadFile("D:作业\\分布式\\merkledag\\214_2021131130_谭明月_1.rar")
 	if err != nil {
 		t.Error(err)
 	}
@@ -139,7 +137,7 @@ func TestDagStructure(t *testing.T) {
 		mp: make(map[string][]byte),
 	}
 	hasher.Reset()
-	dirPath := "D:\\作业\\分布式\\merkle"
+	dirPath := "D:\\作业\\分布式\\merkledag"
 	entries, _ := ioutil.ReadDir(dirPath)
 	directory := &TestDir{
 		list: make([]Node, len(entries)),
