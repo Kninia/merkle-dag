@@ -1,4 +1,4 @@
-package merkle
+package merkledag
 
 type KVStore interface {
 	Has(key []byte) (bool, error)
