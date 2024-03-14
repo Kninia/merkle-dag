@@ -1,4 +1,4 @@
-package merkle
+package merkledag
 
 import (
 	"encoding/json"
