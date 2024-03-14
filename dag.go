@@ -1,196 +1,197 @@
-package merkledag
+package merkle
 
 import (
-	"crypto/sha256"
-	"fmt"
-	"io/ioutil"
-	"os"
-	"testing"
+	"encoding/json"
+	"hash"
 )
 
-type TestFile struct {
-	name string
-	data []byte
+type Link struct {
+	Name string
+	Hash []byte
+	Size int
 }
 
-func (file *TestFile) Size() uint64 {
-	return uint64(len(file.data))
+type Object struct {
+	Links []Link
+	Data  []byte
 }
 
-func (file *TestFile) Name() string {
-	return file.name
-}
-
-func (file *TestFile) Type() int {
-	return FILE
-}
-
-func (file *TestFile) Bytes() []byte {
-	return file.data
-}
-
-type testDirIter struct {
-	list []Node
-	iter int
-}
-
-func (iter *testDirIter) Next() bool {
-	if iter.iter+1 < len(iter.list) {
-		iter.iter += 1
-		return true
-	}
-	return false
-}
-
-func (iter *testDirIter) Node() Node {
-	return iter.list[iter.iter]
-}
-
-type TestDir struct {
-	list []Node
-	name string
-}
-
-func (dir *TestDir) Size() uint64 {
-	var len uint64 = 0
-	for i := range dir.list {
-		len += dir.list[i].Size()
-	}
-	return len
-}
-
-func (dir *TestDir) Name() string {
-	return dir.name
-}
-
-func (dir *TestDir) Type() int {
-	return DIR
-}
-
-func (dir *TestDir) It() DirIterator {
-	it := &testDirIter{
-		list: dir.list,
-		iter: -1,
-	}
-	return it
-}
-
-type HashMap struct {
-	mp map[string]([]byte)
-}
-
-func (hmp *HashMap) Has(key []byte) (bool, error) {
-	return hmp.mp[string(key)] != nil, nil
-}
-
-func (hmp *HashMap) Put(key, value []byte) error {
-	flag, _ := hmp.Has(key)
-	if flag {
-		panic("Key is same")
-	}
-	hmp.mp[string(key)] = value
-	return nil
-}
-
-func (hmp *HashMap) Get(key []byte) ([]byte, error) {
-	flag, _ := hmp.Has(key)
-	if !flag {
-		panic("Don't have the key")
-	}
-	return hmp.mp[string(key)], nil
-}
-
-func (hmp *HashMap) Delete(key []byte) error {
-	return nil
-}
-
-func TestDagStructure(t *testing.T) {
-	store := &HashMap{
-		mp: make(map[string][]byte),
-	}
-	hasher := sha256.New()
-	smallFile := &TestFile{
-		name: "tiny",
-		data: []byte("这是一个用于测试的小文件"),
-	}
-	rootHash := Add(store, smallFile, hasher)
-	fmt.Printf("%x\n", rootHash)
-
-	store = &HashMap{
-		mp: make(map[string][]byte),
-	}
-	hasher.Reset()
-	bigFileContent, err := os.ReadFile("D:\作业\\分布式\\merkle-dag\\214_20211311131_谭明月_1.rar")
-	if err != nil {
-		t.Error(err)
-	}
-
-	bigFile := &TestFile{
-		name: "large",
-		data: bigFileContent,
-	}
-
-	rootHash = Add(store, bigFile, hasher)
-	fmt.Printf("%x\n", rootHash)
-
-	// 一个文件夹的测试
-	store = &HashMap{
-		mp: make(map[string][]byte),
-	}
-	hasher.Reset()
-	dirPath := "D:\作业=-=\\分布式\\merkle-dag"
-	entries, _ := ioutil.ReadDir(dirPath)
-	directory := &TestDir{
-		list: make([]Node, len(entries)),
-		name: "Docs",
-	}
-	for i, entry := range entries {
-		entryPath := dirPath + "/" + entry.Name()
-		if entry.IsDir() {
-			subDir := explore(entryPath)
-			subDir.name = entry.Name()
-			directory.list[i] = subDir
-		} else {
-			fileContent, err := os.ReadFile(entryPath)
-			if err != nil {
-				t.Fatal(err)
+func dfsForSlice(hight int, node File, store KVStore, seedId int, h hash.Hash) (*Object, int) {
+	if hight == 1 {
+		if (len(node.Bytes()) - seedId) <= 256*1024 {
+			data := node.Bytes()[seedId:]
+			blob := Object{
+				Links: nil,
+				Data:  data,
 			}
-			entryFile := &TestFile{
-				name: entry.Name(),
-				data: fileContent,
+			jsonData, _ := json.Marshal(blob)
+			h.Reset()
+			h.Write(jsonData)
+			exists, _ := store.Has(h.Sum(nil))
+			if !exists {
+				store.Put(h.Sum(nil), data)
 			}
-			directory.list[i] = entryFile
+			return &blob, len(data)
+		}
+		links := &Object{}
+		totalLen := 0
+		for i := 1; i <= 4096; i++ {
+			end := seedId + 256*1024
+			if len(node.Bytes()) < end {
+				end = len(node.Bytes())
+			}
+			data := node.Bytes()[seedId:end]
+			blob := Object{
+				Links: nil,
+				Data:  data,
+			}
+			totalLen += len(data)
+			jsonData, _ := json.Marshal(blob)
+			h.Reset()
+			h.Write(jsonData)
+			exists, _ := store.Has(h.Sum(nil))
+			if !exists {
+				store.Put(h.Sum(nil), data)
+			}
+			links.Links = append(links.Links, Link{
+				Hash: h.Sum(nil),
+				Size: len(data),
+			})
+			links.Data = append(links.Data, []byte("data")...)
+			seedId += 256 * 1024
+			if seedId >= len(node.Bytes()) {
+				break
+			}
+		}
+		jsonData, _ := json.Marshal(links)
+		h.Reset()
+		h.Write(jsonData)
+		exists, _ := store.Has(h.Sum(nil))
+		if !exists {
+			store.Put(h.Sum(nil), jsonData)
+		}
+		return links, totalLen
+	} else {
+		links := &Object{}
+		totalLen := 0
+		for i := 1; i <= 4096; i++ {
+			if seedId >= len(node.Bytes()) {
+				break
+			}
+			child, childLen := dfsForSlice(hight-1, node, store, seedId, h)
+			totalLen += childLen
+			jsonData, _ := json.Marshal(child)
+			h.Reset()
+			h.Write(jsonData)
+			links.Links = append(links.Links, Link{
+				Hash: h.Sum(nil),
+				Size: childLen,
+			})
+			typeName := "link"
+			if child.Links == nil {
+				typeName = "data"
+			}
+			links.Data = append(links.Data, []byte(typeName)...)
+		}
+		jsonData, _ := json.Marshal(links)
+		h.Reset()
+		h.Write(jsonData)
+		exists, _ := store.Has(h.Sum(nil))
+		if !exists {
+			store.Put(h.Sum(nil), jsonData)
+		}
+		return links, totalLen
+	}
+}
+
+func sliceFile(node File, store KVStore, h hash.Hash) *Object {
+	if len(node.Bytes()) <= 256*1024 {
+		data := node.Bytes()
+		blob := Object{
+			Links: nil,
+			Data:  data,
+		}
+		jsonData, _ := json.Marshal(blob)
+		h.Reset()
+		h.Write(jsonData)
+		exists, _ := store.Has(h.Sum(nil))
+		if !exists {
+			store.Put(h.Sum(nil), data)
+		}
+		return &blob
+	}
+	linkLen := (len(node.Bytes()) + (256*1024 - 1)) / (256 * 1024)
+	hight := 0
+	tmp := linkLen
+	for {
+		hight++
+		tmp /= 4096
+		if tmp == 0 {
+			break
 		}
 	}
-	rootHash = Add(store, directory, hasher)
-	fmt.Printf("%x\n", rootHash)
+	res, _ := dfsForSlice(hight, node, store, 0, h)
+	return res
 }
 
-func explore(dirPath string) *TestDir {
-	entries, _ := ioutil.ReadDir(dirPath)
-	directory := &TestDir{
-		list: make([]Node, len(entries)),
-	}
-	for i, entry := range entries {
-		entryPath := dirPath + "/" + entry.Name()
-		if entry.IsDir() {
-			subDir := explore(entryPath)
-			subDir.name = entry.Name()
-			directory.list[i] = subDir
+func sliceDirectory(node Dir, store KVStore, h hash.Hash) *Object {
+	iter := node.It()
+	tree := &Object{}
+	for iter.Next() {
+		elem := iter.Node()
+		if elem.Type() == FILE {
+			file := elem.(File)
+			fileSlice := sliceFile(file, store, h)
+			jsonData, _ := json.Marshal(fileSlice)
+			h.Reset()
+			h.Write(jsonData)
+			tree.Links = append(tree.Links, Link{
+				Hash: h.Sum(nil),
+				Size: int(file.Size()),
+				Name: file.Name(),
+			})
+			elemType := "link"
+			if fileSlice.Links == nil {
+				elemType = "data"
+			}
+			tree.Data = append(tree.Data, []byte(elemType)...)
 		} else {
-			fileContent, err := os.ReadFile(entryPath)
-			if err != nil {
-				subDir := explore(entryPath)
-				subDir.name = entry.Name()
-				directory.list[i] = subDir
-				continue
-			}
-			entryFile := &TestFile{
-				name: entry.Name(),
-				data: fileContent,
-			}
-			directory.list[i] = entryFile
+			dir := elem.(Dir)
+			dirSlice := sliceDirectory(dir, store, h)
+			jsonData, _ := json.Marshal(dirSlice)
+			h.Reset()
+			h.Write(jsonData)
+			tree.Links = append(tree.Links, Link{
+				Hash: h.Sum(nil),
+				Size: int(dir.Size()),
+				Name: dir.Name(),
+			})
+			elemType := "tree"
+			tree.Data = append(tree.Data, []byte(elemType)...)
 		}
 	}
-	return directory
+	jsonData, _ := json.Marshal(tree)
+	h.Reset()
+	h.Write(jsonData)
+	exists, _ := store.Has(h.Sum(nil))
+	if !exists {
+		store.Put(h.Sum(nil), jsonData)
+	}
+	return tree
+}
+
+func Add(store KVStore, node Node, h hash.Hash) []byte {
+	if node.Type() == FILE {
+		file := node.(File)
+		fileSlice := sliceFile(file, store, h)
+		jsonData, _ := json.Marshal(fileSlice)
+		h.Write(jsonData)
+		return h.Sum(nil)
+	} else {
+		dir := node.(Dir)
+		dirSlice := sliceDirectory(dir, store, h)
+		jsonData, _ := json.Marshal(dirSlice)
+		h.Write(jsonData)
+		return h.Sum(nil)
+	}
 }
