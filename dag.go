@@ -109,7 +109,6 @@ func TestDagStructure(t *testing.T) {
 		mp: make(map[string][]byte),
 	}
 	hasher := sha256.New()
-	// 一个小文件的测试
 	smallFile := &TestFile{
 		name: "tiny",
 		data: []byte("这是一个用于测试的小文件"),
@@ -117,12 +116,11 @@ func TestDagStructure(t *testing.T) {
 	rootHash := Add(store, smallFile, hasher)
 	fmt.Printf("%x\n", rootHash)
 
-	// 一个大文件的测试
 	store = &HashMap{
 		mp: make(map[string][]byte),
 	}
 	hasher.Reset()
-	bigFileContent, err := os.ReadFile("D:\\Information\\作业=-=\\分布式\\merkle-dag\\213_2021131120_陈思州_1.rar")
+	bigFileContent, err := os.ReadFile("D:\作业\\分布式\\merkle-dag\\214_20211311131_谭明月_1.rar")
 	if err != nil {
 		t.Error(err)
 	}
@@ -140,7 +138,7 @@ func TestDagStructure(t *testing.T) {
 		mp: make(map[string][]byte),
 	}
 	hasher.Reset()
-	dirPath := "D:\\Information\\作业=-=\\分布式\\merkle-dag"
+	dirPath := "D:\作业=-=\\分布式\\merkle-dag"
 	entries, _ := ioutil.ReadDir(dirPath)
 	directory := &TestDir{
 		list: make([]Node, len(entries)),
